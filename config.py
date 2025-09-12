@@ -1,8 +1,8 @@
-# Database configuration for Hostinger
+# Database configuration for PythonAnywhere
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'u681900159_social_user',
-    'password': '[1Ocm~M/|d9M]]',
-    'database': 'u681900159_social_listeni',
+    'host': 'sociallisten.mysql.pythonanywhere-services.com',
+    'user': 'sociallisten',
+    'password': 'YOUR_DATABASE_PASSWORD',  # Set this in PythonAnywhere
+    'database': 'sociallisten$default',
     'port': 3306
 }
