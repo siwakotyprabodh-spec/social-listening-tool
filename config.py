@@ -2,7 +2,7 @@
 DB_CONFIG = {
     'host': 'sociallisten.mysql.pythonanywhere-services.com',
     'user': 'sociallisten',
-    'password': 'YOUR_MYSQL_PASSWORD',  # Replace with the password you just set
+    'password': '=Kg~F<:rc<:EJd%A',
     'database': 'sociallisten$social_listening_new',
     'port': 3306
 }
