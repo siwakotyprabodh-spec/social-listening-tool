@@ -1,8 +1,8 @@
 # Database configuration for PythonAnywhere
 DB_CONFIG = {
-    'host': 'sociallisten.mysql.pythonanywhere-services.com',
-    'user': 'sociallisten',
-    'password': 'YOUR_DATABASE_PASSWORD',  # Set this in PythonAnywhere
-    'database': 'sociallisten$default',
+    'host': 'YOUR_USERNAME.mysql.pythonanywhere-services.com',  # Replace with your actual host
+    'user': 'YOUR_USERNAME',  # Replace with your actual username
+    'password': 'YOUR_NEW_PASSWORD',  # Replace with your new password
+    'database': 'YOUR_USERNAME$social_listening_new',  # Replace with your actual database name
     'port': 3306
 }
