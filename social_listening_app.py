@@ -6,7 +6,7 @@ from urllib.parse import urljoin, urlparse
 import dateparser
 import re
 from datetime import datetime
-from nepali_datetime import date as nep_date
+
 # from selenium import webdriver
 # from selenium.webdriver.chrome.options import Options
 # from selenium.webdriver.chrome.service import Service
@@ -22,6 +22,18 @@ except ImportError:
 import json
 from database import DatabaseManager
 from login_ui import check_login_status, show_logout
+try:
+    from sentiment_analyzer import SentimentAnalyzer
+    SENTIMENT_AVAILABLE = True
+except ImportError as e:
+    print(f"[WARNING] Sentiment analyzer not available: {e}")
+    SENTIMENT_AVAILABLE = False
+    # Create a dummy class for fallback
+    class SentimentAnalyzer:
+        def __init__(self, method='vader'):
+            self.method = method
+        def analyze_sentiment(self, text):
+            return {'error': 'Sentiment analysis not available'}
 
 # Initialize translator and summarizer
 @st.cache_resource
@@ -76,23 +88,11 @@ def preprocess_text(text):
     text = re.sub(r'&[a-zA-Z]+;', ' ', text)
     text = re.sub(r'<[^>]+>', ' ', text)
     
-    # Remove special characters that might confuse translators, but keep Nepali characters
-    text = re.sub(r'[^\w\s\.\,\!\?\:\;\-\(\)\[\]\"\'\u0900-\u097F]', ' ', text)
+    # Remove special characters that might confuse translators
+    text = re.sub(r'[^\w\s\.\,\!\?\:\;\-\(\)\[\]\"\']', ' ', text)
     
     # Ensure proper sentence endings
-    text = re.sub(r'([।!?])\s*([a-zA-Z\u0900-\u097F])', r'\1 \2', text)
-    
-    # Fix common Nepali text issues
-    # Remove extra spaces around Nepali punctuation
-    text = re.sub(r'\s+([।!?])\s*', r'\1 ', text)
-    
-    # Normalize Nepali numbers to English if present
-    nepali_to_english_numbers = {
-        '०': '0', '१': '1', '२': '2', '३': '3', '४': '4',
-        '५': '5', '६': '6', '७': '7', '८': '8', '९': '9'
-    }
-    for nepali, english in nepali_to_english_numbers.items():
-        text = text.replace(nepali, english)
+    text = re.sub(r'([.!?])\s*([a-zA-Z])', r'\1 \2', text)
     
     return text.strip()
 
@@ -209,8 +209,8 @@ def translate_with_fallback(text, translators, quality_mode='Standard (Fast)'):
     
     # Split text into sentences for better translation if using high quality mode
     if quality_mode in ['High Quality (Slower)', 'Best Quality (Slowest)']:
-        # Split by Nepali sentence endings and other punctuation
-        sentences = re.split(r'[।!?]+', cleaned_text)
+        # Split by sentence endings
+        sentences = re.split(r'[.!?]+', cleaned_text)
         sentences = [s.strip() for s in sentences if s.strip()]
         
         if len(sentences) > 1:
@@ -264,7 +264,7 @@ def translate_with_fallback(text, translators, quality_mode='Standard (Fast)'):
     return "Translation failed - could not process content"
 
 def translate_and_summarize(text, translators, summarizer, quality_mode='Standard (Fast)', summary_length='Medium (2 paragraphs)'):
-    """Translate Nepali text to English and generate summary"""
+    """Translate text to English and generate summary"""
     try:
         if not text or len(text.strip()) < 50:
             return "Content too short to process"
@@ -346,9 +346,6 @@ def translate_and_summarize(text, translators, summarizer, quality_mode='Standar
         print(f"[ERROR] Translation/summarization failed: {e}")
         return "Failed to process content"
 
-# Nepali months
-NEPALI_MONTHS = ['बैशाख', 'जेठ', 'असार', 'श्रावण', 'भदौ', 'आश्विन', 'कार्तिक', 'मंसिर', 'पुष', 'माघ', 'फाल्गुण', 'चैत्र']
-
 # Helper to get internal links
 def get_internal_links(base_url, soup):
     links = set()
@@ -358,20 +355,6 @@ def get_internal_links(base_url, soup):
         if urlparse(joined).netloc == urlparse(base_url).netloc:
             links.add(joined)
     return links
-
-# Helper to parse Nepali date string like '६ साउन २०८२' to Gregorian
-def parse_nepali_date_string(date_str):
-    try:
-        parts = date_str.strip().split()
-        if len(parts) != 3:
-            return None
-        day = int(parts[0])
-        month = NEPALI_MONTHS.index(parts[1]) + 1
-        year = int(parts[2])
-        nepali_date = nep_date(year, month, day)
-        return nepali_date.to_datetime_date()
-    except Exception:
-        return None
 
 # Helper to extract date from page
 def extract_date(soup):
@@ -396,10 +379,6 @@ def extract_date(soup):
         dt = dateparser.parse(date_match.group(1))
         if dt:
             return dt, date_match.group(1)
-    nepali_date_match = re.search(r'(\d{1,2} [\u0900-\u097F]+ \d{4})', soup.get_text())
-    if nepali_date_match:
-        nepali_greg = parse_nepali_date_string(nepali_date_match.group(1))
-        return nepali_greg, nepali_date_match.group(1)
     return None, None
 
 def check_keywords(page_text, keywords, logic):
@@ -411,7 +390,140 @@ def check_keywords(page_text, keywords, logic):
     else:
         return any(kw.lower() in page_text.lower() for kw in keywords)
 
-def crawl_site_requests(start_url, keywords, logic, date_from, date_to, max_pages=100, save_html=False, site_timeout=120):
+def filter_results_by_sentiment(results, sentiment_category="All", min_score=-1.0, max_score=1.0):
+    """
+    Filter results based on sentiment analysis
+    
+    Args:
+        results (list): List of result dictionaries
+        sentiment_category (str): "All", "Positive", "Negative", or "Neutral"
+        min_score (float): Minimum sentiment score (-1.0 to 1.0)
+        max_score (float): Maximum sentiment score (-1.0 to 1.0)
+    
+    Returns:
+        list: Filtered results
+    """
+    if not results:
+        return []
+    
+    filtered = []
+    
+    for result in results:
+        # Check if result has sentiment data
+        if 'sentiment' not in result or not result['sentiment']:
+            # If no sentiment data and we're not filtering by category, include it
+            if sentiment_category == "All":
+                filtered.append(result)
+            continue
+        
+        sentiment_data = result['sentiment']
+        
+        # Skip if sentiment analysis failed
+        if 'error' in sentiment_data:
+            if sentiment_category == "All":
+                filtered.append(result)
+            continue
+        
+        # Get compound score
+        compound_score = sentiment_data.get('compound', 0.0)
+        
+        # Apply score range filter
+        if compound_score < min_score or compound_score > max_score:
+            continue
+        
+        # Apply category filter
+        if sentiment_category != "All":
+            if sentiment_category == "Positive" and compound_score <= 0.05:
+                continue
+            elif sentiment_category == "Negative" and compound_score >= -0.05:
+                continue
+            elif sentiment_category == "Neutral" and (compound_score > 0.05 or compound_score < -0.05):
+                continue
+        
+        filtered.append(result)
+    
+    return filtered
+
+def get_sentiment_summary_stats(results):
+    """
+    Get comprehensive sentiment statistics for results
+    
+    Args:
+        results (list): List of result dictionaries
+    
+    Returns:
+        dict: Sentiment statistics
+    """
+    if not results:
+        return {
+            'total': 0,
+            'positive': 0, 'negative': 0, 'neutral': 0, 'failed': 0,
+            'avg_score': 0.0, 'min_score': 0.0, 'max_score': 0.0,
+            'score_distribution': {}
+        }
+    
+    stats = {
+        'total': len(results),
+        'positive': 0, 'negative': 0, 'neutral': 0, 'failed': 0,
+        'scores': [], 'failed_count': 0
+    }
+    
+    for result in results:
+        if 'sentiment' in result and result['sentiment']:
+            sentiment_data = result['sentiment']
+            if 'error' not in sentiment_data:
+                compound_score = sentiment_data.get('compound', 0.0)
+                stats['scores'].append(compound_score)
+                
+                if compound_score > 0.05:
+                    stats['positive'] += 1
+                elif compound_score < -0.05:
+                    stats['negative'] += 1
+                else:
+                    stats['neutral'] += 1
+            else:
+                stats['failed'] += 1
+        else:
+            stats['failed'] += 1
+    
+    # Calculate additional statistics
+    if stats['scores']:
+        stats['avg_score'] = sum(stats['scores']) / len(stats['scores'])
+        stats['min_score'] = min(stats['scores'])
+        stats['max_score'] = max(stats['scores'])
+        
+        # Score distribution (bins)
+        score_bins = {
+            'Very Negative (-1.0 to -0.5)': 0,
+            'Negative (-0.5 to -0.1)': 0,
+            'Slightly Negative (-0.1 to -0.05)': 0,
+            'Neutral (-0.05 to 0.05)': 0,
+            'Slightly Positive (0.05 to 0.1)': 0,
+            'Positive (0.1 to 0.5)': 0,
+            'Very Positive (0.5 to 1.0)': 0
+        }
+        
+        for score in stats['scores']:
+            if score <= -0.5:
+                score_bins['Very Negative (-1.0 to -0.5)'] += 1
+            elif score <= -0.1:
+                score_bins['Negative (-0.5 to -0.1)'] += 1
+            elif score <= -0.05:
+                score_bins['Slightly Negative (-0.1 to -0.05)'] += 1
+            elif score <= 0.05:
+                score_bins['Neutral (-0.05 to 0.05)'] += 1
+            elif score <= 0.1:
+                score_bins['Slightly Positive (0.05 to 0.1)'] += 1
+            elif score <= 0.5:
+                score_bins['Positive (0.1 to 0.5)'] += 1
+            else:
+                score_bins['Very Positive (0.5 to 1.0)'] += 1
+        
+        stats['score_distribution'] = score_bins
+    
+    return stats
+
+def crawl_site_requests(start_url, keywords, logic, date_from, date_to, max_pages=100, save_html=False, site_timeout=120, enable_sentiment=True, sentiment_method='vader'):
     visited = set()
     to_visit = [start_url]
     matches = []
@@ -462,21 +574,67 @@ def crawl_site_requests(start_url, keywords, logic, date_from, date_to, max_page
                     elif date_to and page_date > date_to:
                         pass
                     else:
+                        # Add sentiment analysis to the content
+                        sentiment_result = None
+                        print(f"[DEBUG] Sentiment analysis check: extracted_content={bool(extracted_content)}, enable_sentiment={enable_sentiment}, SENTIMENT_AVAILABLE={SENTIMENT_AVAILABLE}")
+                        if extracted_content and enable_sentiment and SENTIMENT_AVAILABLE:
+                            try:
+                                print(f"[DEBUG] Creating SentimentAnalyzer with method: {sentiment_method}")
+                                sentiment_analyzer = SentimentAnalyzer(method=sentiment_method)
+                                sentiment_result = sentiment_analyzer.analyze_sentiment(extracted_content)
+                                print(f"[SENTIMENT] {url}: {sentiment_result}")
+                            except Exception as e:
+                                print(f"[WARNING] Sentiment analysis failed for {url}: {e}")
+                                sentiment_result = {'error': str(e)}
+                                # Fallback to basic sentiment if available
+                                try:
+                                    if hasattr(sentiment_analyzer, 'analyze_sentiment_vader'):
+                                        sentiment_result = sentiment_analyzer.analyze_sentiment_vader(extracted_content)
+                                        print(f"[SENTIMENT FALLBACK] {url}: {sentiment_result}")
+                                except:
+                                    pass
+                        
                         matches.append({
                             'url': url, 
                             'date': page_date.strftime('%Y-%m-%d') if page_date else 'Unknown', 
                             'raw_date': raw_date if raw_date else 'N/A',
-                            'content': extracted_content  # Store content during crawl
+                            'content': extracted_content,  # Store content during crawl
+                            'sentiment': sentiment_result  # Add sentiment analysis
                         })
                         print(f"[DEBUG] Stored content for {url}: {len(extracted_content) if extracted_content else 0} characters")
+                        if sentiment_result and 'error' not in sentiment_result:
+                            print(f"[SENTIMENT] {url}: {sentiment_result.get('compound', 0):.3f}")
                 else:
+                    # Add sentiment analysis to the content
+                    sentiment_result = None
+                    print(f"[DEBUG] Sentiment analysis check: extracted_content={bool(extracted_content)}, enable_sentiment={enable_sentiment}, SENTIMENT_AVAILABLE={SENTIMENT_AVAILABLE}")
+                    if extracted_content and enable_sentiment and SENTIMENT_AVAILABLE:
+                        try:
+                            print(f"[DEBUG] Creating SentimentAnalyzer with method: {sentiment_method}")
+                            sentiment_analyzer = SentimentAnalyzer(method=sentiment_method)
+                            sentiment_result = sentiment_analyzer.analyze_sentiment(extracted_content)
+                            print(f"[SENTIMENT] {url}: {sentiment_result}")
+                        except Exception as e:
+                            print(f"[WARNING] Sentiment analysis failed for {url}: {e}")
+                            sentiment_result = {'error': str(e)}
+                            # Fallback to basic sentiment if available
+                            try:
+                                if hasattr(sentiment_analyzer, 'analyze_sentiment_vader'):
+                                    sentiment_result = sentiment_analyzer.analyze_sentiment_vader(extracted_content)
+                                    print(f"[SENTIMENT FALLBACK] {url}: {sentiment_result}")
+                            except:
+                                pass
+                    
                     matches.append({
                         'url': url, 
                         'date': page_date.strftime('%Y-%m-%d') if page_date else 'Unknown', 
                         'raw_date': raw_date if raw_date else 'N/A',
-                        'content': extracted_content  # Store content during crawl
+                        'content': extracted_content,  # Store content during crawl
+                        'sentiment': sentiment_result  # Add sentiment analysis
                     })
                     print(f"[DEBUG] Stored content for {url}: {len(extracted_content) if extracted_content else 0} characters")
+                    if sentiment_result and 'error' not in sentiment_result:
+                        print(f"[SENTIMENT] {url}: {sentiment_result.get('compound', 0):.3f}")
             for link in get_internal_links(start_url, soup):
                 if link not in visited and link not in to_visit:
                     to_visit.append(link)
@@ -632,6 +790,21 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
+    # Sentiment analysis configuration (always visible)
+    st.sidebar.markdown("## 🧠 Sentiment Analysis")
+    sentiment_method = st.sidebar.selectbox(
+        "Sentiment Method",
+        ["vader", "textblob", "hybrid"],
+        index=0,
+        help="VADER: Fast, good for social media. TextBlob: Balanced. Hybrid: Combines both for accuracy."
+    )
+    
+    enable_sentiment = st.sidebar.checkbox(
+        "Enable Sentiment Analysis",
+        value=True,
+        help="Analyze sentiment of crawled content automatically"
+    )
+    
     with st.sidebar.expander("🔧 Configure Settings", expanded=False):
         if user_prefs:
             translation_quality = st.selectbox(
@@ -660,6 +833,17 @@ def main():
                 value=user_prefs['crawl_timeout'],
                 help="Maximum time to spend crawling each website"
             )
+            sentiment_method = st.selectbox(
+                '🧠 Sentiment Method',
+                ['vader', 'textblob', 'hybrid'],
+                index=['vader', 'textblob', 'hybrid'].index(user_prefs.get('sentiment_method', 'vader')),
+                help="VADER: Fast, good for social media. TextBlob: Balanced. Hybrid: Combines both for accuracy."
+            )
+            enable_sentiment = st.checkbox(
+                '🔍 Enable Sentiment Analysis',
+                value=user_prefs.get('enable_sentiment', True),
+                help="Analyze sentiment of crawled content automatically"
+            )
         else:
             translation_quality = st.selectbox(
                 '🌐 Translation Quality', 
@@ -685,6 +869,22 @@ def main():
                 value=120,
                 help="Maximum time to spend crawling each website"
             )
+            if SENTIMENT_AVAILABLE:
+                sentiment_method = st.selectbox(
+                    '🧠 Sentiment Method',
+                    ['vader', 'textblob', 'hybrid'],
+                    index=0,
+                    help="VADER: Fast, good for social media. TextBlob: Balanced. Hybrid: Combines both for accuracy."
+                )
+                enable_sentiment = st.checkbox(
+                    '🔍 Enable Sentiment Analysis',
+                    value=True,
+                    help="Analyze sentiment of crawled content automatically"
+                )
+            else:
+                sentiment_method = 'vader'
+                enable_sentiment = False
+                st.warning("⚠️ Sentiment analysis not available")
         
         # Save button with better styling
         col1, col2 = st.columns([1, 1])
@@ -694,7 +894,9 @@ def main():
                     'translation_quality': translation_quality,
                     'summary_length': summary_length,
                     'max_crawl_pages': max_crawl_pages,
-                    'crawl_timeout': crawl_timeout
+                    'crawl_timeout': crawl_timeout,
+                    'sentiment_method': sentiment_method,
+                    'enable_sentiment': enable_sentiment
                 }
                 if db.save_user_preferences(st.session_state.user_id, preferences):
                     st.success("✅ Preferences saved!")
@@ -708,7 +910,7 @@ def main():
     <div class="main-header">
         <h1 style="color: white; text-align: center; margin-bottom: 10px;">🔍 Social Listening Tool</h1>
         <p style="color: white; text-align: center; font-size: 16px; margin-bottom: 0;">
-            Monitor and analyze Nepali social media content with AI-powered translation and summarization
+            Monitor and analyze social media content with AI-powered translation and summarization
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -728,6 +930,8 @@ def main():
         st.session_state.filter_from = None
     if 'filter_to' not in st.session_state:
         st.session_state.filter_to = None
+    if 'filtered_results' not in st.session_state:
+        st.session_state.filtered_results = None
 
     # Use translation settings from user preferences
     translation_mode = translation_quality
@@ -793,17 +997,19 @@ def main():
     # Date range section with better styling
     st.markdown("---")
     st.markdown("### 📅 Date Range Filter")
-    st.markdown("Choose either English or Nepali calendar dates (optional):")
+    st.markdown("Choose date range (optional):")
     
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("**🌍 English Calendar**")
+        st.markdown("**📅 From Date**")
         date_from = st.date_input(
             'From date (optional)', 
             value=None, 
             key='eng_from',
             help='Start date for filtering results'
         )
+    with col2:
+        st.markdown("**📅 To Date**")
         date_to = st.date_input(
             'To date (optional)', 
             value=None, 
@@ -811,66 +1017,21 @@ def main():
             help='End date for filtering results'
         )
     
-    with col2:
-        st.markdown("**🇳🇵 Nepali Calendar**")
-        nep_years = list(range(2070, 2091))
-        nep_months = NEPALI_MONTHS
-        nep_days = list(range(1, 33))
-        
-        st.markdown("**From date:**")
-        nep_from_year = st.selectbox(
-            'Year', 
-            nep_years, 
-            index=nep_years.index(2082), 
-            key='nep_from_year',
-            help='Nepali year'
-        )
-        nep_from_month = st.selectbox(
-            'Month', 
-            nep_months, 
-            index=2, 
-            key='nep_from_month',
-            help='Nepali month'
-        )
-        nep_from_day = st.selectbox(
-            'Day', 
-            nep_days, 
-            index=0, 
-            key='nep_from_day',
-            help='Nepali day'
-        )
-        
-        st.markdown("**To date:**")
-        nep_to_year = st.selectbox(
-            'Year ', 
-            nep_years, 
-            index=nep_years.index(2082), 
-            key='nep_to_year',
-            help='Nepali year'
-        )
-        nep_to_month = st.selectbox(
-            'Month ', 
-            nep_months, 
-            index=2, 
-            key='nep_to_month',
-            help='Nepali month'
-        )
-        nep_to_day = st.selectbox(
-            'Day ', 
-            nep_days, 
-            index=0, 
-            key='nep_to_day',
-            help='Nepali day'
-        )
+    # Use English dates for filtering
+    filter_from = pd.to_datetime(date_from) if date_from else None
+    filter_to = pd.to_datetime(date_to) if date_to else None
 
-    # Convert Nepali dates if selected
-    nepali_from_greg = nep_date(nep_from_year, nep_months.index(nep_from_month)+1, nep_from_day).to_datetime_date() if nep_from_year and nep_from_month and nep_from_day else None
-    nepali_to_greg = nep_date(nep_to_year, nep_months.index(nep_to_month)+1, nep_to_day).to_datetime_date() if nep_to_year and nep_to_month and nep_to_day else None
+    # Initialize results variable
+    results = None
+    debug_rows_all = None
+    keyword = None
 
-    # Use Nepali date if selected, else English
-    filter_from = nepali_from_greg if nepali_from_greg else (pd.to_datetime(date_from) if date_from else None)
-    filter_to = nepali_to_greg if nepali_to_greg else (pd.to_datetime(date_to) if date_to else None)
-
+    # Initialize variables
+    results = []
+    debug_rows_all = []
+    urls = []
+    results_placeholder = st.empty()  # Placeholder for real-time results
+    
     # Check if we already have crawled results
     if st.session_state.crawled_results is not None:
         st.success("✅ Using previously crawled results. Upload a new file or change settings to re-crawl.")
@@ -879,13 +1040,25 @@ def main():
         keyword = st.session_state.keyword
         filter_from = st.session_state.filter_from
         filter_to = st.session_state.filter_to
-    if uploaded_file and active_keywords:
-        # Initialize variables
-        results = []
-        debug_rows_all = []
-        urls = []
-        results_placeholder = st.empty()  # Placeholder for real-time results
+        # Get URLs from session state if available
+        urls = st.session_state.get('crawled_urls', [])
+        if not urls:
+            st.warning("⚠️ **Note:** URLs not stored from previous crawl. Re-crawl may not work properly.")
+    
+    # Check if we already have results for this keyword and date range
+    if (st.session_state.crawled_results is not None and 
+        st.session_state.keyword == active_keywords and
+        st.session_state.filter_from == filter_from and
+        st.session_state.filter_to == filter_to):
         
+        st.success("Using cached results from previous crawl!")
+        results = st.session_state.crawled_results
+        debug_rows_all = st.session_state.debug_rows_all
+        # Get URLs from session state if available
+        urls = st.session_state.get('crawled_urls', [])
+    
+    # If we have an uploaded file and active keywords, process them
+    if uploaded_file and active_keywords:
         # Check if we already have results for this keyword and date range
         if (st.session_state.crawled_results is not None and 
             st.session_state.keyword == active_keywords and
@@ -895,6 +1068,8 @@ def main():
             st.success("Using cached results from previous crawl!")
             results = st.session_state.crawled_results
             debug_rows_all = st.session_state.debug_rows_all
+            # Get URLs from session state if available
+            urls = st.session_state.get('crawled_urls', [])
         else:
             # New crawl needed
             if uploaded_file.name.endswith('.csv'):
@@ -929,18 +1104,38 @@ def main():
             )
         
         with col2:
-            if st.session_state.crawled_results is not None:
+            if st.session_state.crawled_results is not None and st.session_state.get('crawled_urls'):
                 re_crawl = st.button(
                     "🔄 Re-crawl", 
                     help="Re-crawl all sites with current settings"
                 )
             else:
                 re_crawl = False
+                if st.session_state.crawled_results is not None:
+                    st.markdown("⚠️ **Re-crawl unavailable**")
+                    st.markdown("*No URLs stored for re-crawling*")
         
         with col3:
             st.markdown(f"**URLs to analyze:** {len(urls)}")
+            if st.session_state.get('crawled_urls'):
+                st.markdown(f"**Cached URLs:** {len(st.session_state.crawled_urls)}")
+            if st.session_state.crawled_results is not None:
+                st.markdown(f"**Cached results:** {len(st.session_state.crawled_results)}")
         
         # Start crawling when button is clicked
+        if (start_crawl or re_crawl) and urls:
+            # Debug: Show what we're crawling
+            st.info(f"🚀 Starting crawl with {len(urls)} URLs")
+            print(f"[DEBUG] Starting crawl with {len(urls)} URLs: {urls[:3]}...")  # Show first 3 URLs
+        elif re_crawl and not urls:
+            st.error("⚠️ Cannot re-crawl: No URLs available. Please upload a file first or clear the cache.")
+            print("[DEBUG] Re-crawl clicked but no URLs available")
+            st.stop()
+        else:
+            # No crawling happening
+            pass
+            
+        # Only proceed with crawling if we have URLs and a crawl was requested
         if (start_crawl or re_crawl) and urls:
             with st.spinner('Crawling sites...'):
                 for url in stqdm(urls, desc='Crawling sites'):
@@ -949,7 +1144,7 @@ def main():
                     site_start_time = time.time()
                     try:
                         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                            future = executor.submit(crawl_site_requests, url, active_keywords, search_logic, filter_from, filter_to, 100, False, 120)
+                            future = executor.submit(crawl_site_requests, url, active_keywords, search_logic, filter_from, filter_to, 100, False, 120, enable_sentiment, sentiment_method)
                             try:
                                 matches, debug_rows = future.result(timeout=130)
                             except concurrent.futures.TimeoutError:
@@ -978,35 +1173,93 @@ def main():
             st.session_state.keyword = active_keywords
             st.session_state.filter_from = filter_from
             st.session_state.filter_to = filter_to
+            st.session_state.crawled_urls = urls  # Store URLs for re-crawling
+            # Reset filtered results when new results are loaded
+            st.session_state.filtered_results = None
         
         # Show initial results without translation
         if not results and not (start_crawl or re_crawl):
-            st.info("📋 Ready to crawl! Upload a file, set your keywords, and click 'Start Crawl' to begin.")
+            if st.session_state.crawled_results is not None:
+                if st.session_state.get('crawled_urls'):
+                    st.info("📋 Ready to re-crawl! Click 'Re-crawl' to refresh your data with current settings.")
+                else:
+                    st.warning("⚠️ **Re-crawl not available:** URLs from previous crawl were not stored. Please upload a new file to crawl again.")
+            else:
+                st.info("📋 Ready to crawl! Upload a file, set your keywords, and click 'Start Crawl' to begin.")
         
         if results:
             # Results header with better styling
             st.markdown("### 📊 Analysis Results")
-            st.markdown(f"**Found {len(results)} matching pages**")
+            
+            # Use filtered results if available, otherwise use all results
+            display_results = st.session_state.get('filtered_results', results)
+            
+            # Ensure display_results is not None
+            if display_results is None:
+                display_results = results
+            
+            # Debug: Check what we have
+            print(f"[DEBUG] Results length: {len(results) if results else 0}")
+            print(f"[DEBUG] Display results length: {len(display_results) if display_results else 0}")
+            print(f"[DEBUG] Results type: {type(results)}")
+            print(f"[DEBUG] Display results type: {type(display_results)}")
+            
+            if len(results) > 0:
+                st.markdown(f"**Found {len(results)} matching pages**")
+                if display_results and len(display_results) != len(results):
+                    st.markdown(f"**🔍 Filtered to {len(display_results)} results**")
+            else:
+                st.warning("No results found. Please check your search criteria or try crawling again.")
+                return
             
             # Create DataFrame and ensure content column is included
-            results_df = pd.DataFrame(results)
+            if not display_results or len(display_results) == 0:
+                st.warning("No results to display. Please check your search criteria or try crawling again.")
+                return
+                
+            results_df = pd.DataFrame(display_results)
+            
+            # Check if 'url' column exists
+            if 'url' not in results_df.columns:
+                st.error("Results are missing the 'url' column. This indicates a data structure issue.")
+                st.write("Available columns:", results_df.columns.tolist())
+                if display_results and len(display_results) > 0:
+                    st.write("First result structure:", display_results[0])
+                    st.write("First result keys:", list(display_results[0].keys()) if isinstance(display_results[0], dict) else "Not a dict")
+                else:
+                    st.write("No results to examine")
+                return
+            
+            # Ensure all required columns exist
+            required_columns = ['url', 'date', 'content']
+            missing_columns = [col for col in required_columns if col not in results_df.columns]
+            if missing_columns:
+                st.error(f"Missing required columns: {missing_columns}")
+                st.write("Available columns:", results_df.columns.tolist())
+                return
+                
             results_df['Visit Link'] = results_df['url'].apply(lambda x: f'[Visit Link]({x})')
             
             # Debug: Check if content is in the DataFrame
             print(f"[DEBUG] DataFrame columns: {results_df.columns.tolist()}")
-            print(f"[DEBUG] Number of results with content: {sum(1 for r in results if r.get('content'))}")
+            print(f"[DEBUG] Number of results with content: {sum(1 for r in display_results if r and r.get('content')) if display_results else 0}")
             
             # Show debug info to user in a collapsible section
             with st.expander("🔍 Debug Information"):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.write(f"**Total results:** {len(results)}")
-                    st.write(f"**Results with content:** {sum(1 for r in results if r.get('content'))}")
+                    st.write(f"**Results with content:** {sum(1 for r in display_results if r and r.get('content')) if display_results else 0}")
                     st.write(f"**Using cached results:** {st.session_state.crawled_results is not None}")
+                    st.write(f"**Cached URLs:** {len(st.session_state.get('crawled_urls', []))}")
+                    st.write(f"**Re-crawl available:** {'Yes' if st.session_state.get('crawled_urls') else 'No'}")
+                    if display_results and len(display_results) != len(results):
+                        st.write(f"**Filtered results:** {len(display_results)}")
                 with col2:
                     st.write(f"**DataFrame columns:** {results_df.columns.tolist()}")
-                    if results:
-                        st.write(f"**First result content length:** {len(results[0].get('content', ''))}")
+                    if display_results and len(display_results) > 0:
+                        st.write(f"**First result content length:** {len(display_results[0].get('content', ''))}")
+                    st.write(f"**Current URLs available:** {len(urls)}")
                 
                 # Add clear cache button
                 if st.button("🗑️ Clear Cache & Re-crawl", help="Clear cached results and start fresh"):
@@ -1015,6 +1268,7 @@ def main():
                     st.session_state.keyword = None
                     st.session_state.filter_from = None
                     st.session_state.filter_to = None
+                    st.session_state.crawled_urls = None
                     st.rerun()
             
             # Selection instructions
@@ -1022,6 +1276,175 @@ def main():
             
             # Initialize selected_indices first
             selected_indices = []
+            
+                        # Sentiment Summary Section
+            if enable_sentiment and SENTIMENT_AVAILABLE and results and len(results) > 0:
+                st.markdown("### 🧠 Sentiment Analysis Summary")
+                
+                # Calculate sentiment statistics
+                sentiment_stats = {'positive': 0, 'negative': 0, 'neutral': 0, 'failed': 0}
+                sentiment_scores = []
+                
+                for result in results:
+                    if 'sentiment' in result and result['sentiment']:
+                        sentiment_data = result['sentiment']
+                        if 'error' not in sentiment_data:
+                            compound_score = sentiment_data.get('compound', 0)
+                            sentiment_scores.append(compound_score)
+                            
+                            if compound_score > 0.05:
+                                sentiment_stats['positive'] += 1
+                            elif compound_score < -0.05:
+                                sentiment_stats['negative'] += 1
+                            else:
+                                sentiment_stats['neutral'] += 1
+                        else:
+                            sentiment_stats['failed'] += 1
+                    else:
+                        sentiment_stats['failed'] += 1
+                
+                # Display sentiment statistics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("😊 Positive", sentiment_stats['positive'])
+                with col2:
+                    st.metric("😞 Negative", sentiment_stats['negative'])
+                with col3:
+                    st.metric("😐 Neutral", sentiment_stats['neutral'])
+                with col4:
+                    st.metric("⚠️ Failed", sentiment_stats['failed'])
+                
+                # Show average sentiment score
+                if sentiment_scores:
+                    avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
+                    st.markdown(f"**📊 Average Sentiment Score:** {avg_sentiment:.3f}")
+                    
+                    # Sentiment distribution chart
+                    import plotly.express as px
+                    try:
+                        sentiment_df = pd.DataFrame({
+                            'Sentiment': ['Positive', 'Negative', 'Neutral'],
+                            'Count': [sentiment_stats['positive'], sentiment_stats['negative'], sentiment_stats['neutral']]
+                        })
+                        
+                        fig = px.pie(sentiment_df, values='Count', names='Sentiment',
+                                    title='Sentiment Distribution',
+                                    color_discrete_map={'Positive': '#00ff00', 'Negative': '#ff0000', 'Neutral': '#808080'})
+                        fig.update_traces(textposition='inside', textinfo='percent+label')
+                        st.plotly_chart(fig, use_container_width=True)
+                    except ImportError:
+                        st.info("📊 Install plotly for sentiment charts: `pip install plotly`")
+                
+                st.markdown("---")
+                
+                # Sentiment Filtering Section
+                if enable_sentiment and SENTIMENT_AVAILABLE:
+                    st.markdown("### 🔍 Sentiment Filtering")
+                    
+                    # Filter controls
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        sentiment_category = st.selectbox(
+                            "Filter by Sentiment Category",
+                            ["All", "Positive", "Negative", "Neutral"],
+                            help="Show only results with specific sentiment"
+                        )
+                    
+                    with col2:
+                        min_score = st.slider(
+                            "Minimum Sentiment Score",
+                            min_value=-1.0,
+                            max_value=1.0,
+                            value=-1.0,
+                            step=0.1,
+                            help="Filter results above this sentiment score"
+                        )
+                    
+                    with col3:
+                        max_score = st.slider(
+                            "Maximum Sentiment Score",
+                            min_value=-1.0,
+                            max_value=1.0,
+                            value=1.0,
+                            step=0.1,
+                            help="Filter results below this sentiment score"
+                        )
+                    
+                    # Filter action buttons
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("🔍 Apply Filters", help="Apply the current filter settings"):
+                            filtered_results = filter_results_by_sentiment(
+                                results, 
+                                sentiment_category, 
+                                min_score, 
+                                max_score
+                            )
+                            
+                            # Store filtered results in session state
+                            st.session_state.filtered_results = filtered_results
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("🗑️ Clear Filters", help="Clear all applied filters"):
+                            st.session_state.filtered_results = None
+                            st.rerun()
+                    
+                    # Show current filter status
+                    current_filtered = st.session_state.get('filtered_results', results)
+                    # Ensure current_filtered is not None before calling len()
+                    if current_filtered is None:
+                        current_filtered = results
+                    
+                    if current_filtered and len(current_filtered) != len(results):
+                        st.success(f"🔍 Currently showing {len(current_filtered)} filtered results (from {len(results)} total)")
+                    else:
+                        st.info("🔍 No filters applied - showing all results")
+                    
+                    # Debug sentiment data
+                    with st.expander("🔍 Debug Sentiment Data"):
+                        if results:
+                            sentiment_count = sum(1 for r in results if 'sentiment' in r and r['sentiment'] and 'error' not in r['sentiment'])
+                            st.write(f"**Results with valid sentiment data:** {sentiment_count}/{len(results)}")
+                            sample_sentiment = results[0].get('sentiment', 'No sentiment data')
+                            st.write(f"**Sample sentiment data:** {sample_sentiment}")
+                        else:
+                            st.write("**Results with valid sentiment data:** No results available")
+                            st.write("**Sample sentiment data:** No results available")
+                    
+                    # Quick filter buttons
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        if st.button("😊 Show Positive Only", help="Show only positive sentiment results", disabled=not results):
+                            if results:
+                                filtered_results = filter_results_by_sentiment(results, "Positive", -1.0, 1.0)
+                                st.session_state.filtered_results = filtered_results
+                                st.rerun()
+                    
+                    with col2:
+                        if st.button("😞 Show Negative Only", help="Show only negative sentiment results", disabled=not results):
+                            if results:
+                                filtered_results = filter_results_by_sentiment(results, "Negative", -1.0, 1.0)
+                                st.session_state.filtered_results = filtered_results
+                                st.rerun()
+                    
+                    with col3:
+                        if st.button("😐 Show Neutral Only", help="Show only neutral sentiment results", disabled=not results):
+                            if results:
+                                filtered_results = filter_results_by_sentiment(results, "Neutral", -1.0, 1.0)
+                                st.session_state.filtered_results = filtered_results
+                                st.rerun()
+                    
+                    with col4:
+                        if st.button("🔄 Show All", help="Show all results", disabled=not results):
+                            if results:
+                                st.session_state.filtered_results = None
+                                st.rerun()
+                else:
+                    st.info("🔍 Sentiment filtering is only available when sentiment analysis is enabled")
+                    filtered_results = results
+                
+                st.markdown("---")
             
             # Bulk selection options with better styling
             st.markdown("**Quick Selection:**")
@@ -1036,90 +1459,106 @@ def main():
                 st.markdown(f"**Selected:** {len(selected_indices)} items")
             
             # Handle bulk selection outside form to avoid re-execution
-            if select_all:
+            if select_all and results_df is not None:
                 selected_indices = list(range(len(results_df)))
             elif select_none:
                 selected_indices = []
-            elif select_recent:
+            elif select_recent and results_df is not None:
                 selected_indices = list(range(min(5, len(results_df))))
             
             # Create a form for selection
-            with st.form("translation_selection"):
-                # Display results in a more organized way with better column layout
-                for i, row in results_df.iterrows():
-                    # Create a container for each result with better spacing
-                    with st.container():
-                        # Use better column proportions: Select | URL/Info | Content Preview | Actions
-                        col1, col2, col3, col4 = st.columns([0.08, 0.35, 0.42, 0.15])
-                        
-                        with col1:
-                            # Pre-select based on bulk actions
-                            default_value = i in selected_indices
-                            if st.checkbox("", key=f"select_{i}", value=default_value, help=f"Select result {i+1}"):
-                                selected_indices.append(i)
-                        
-                        with col2:
-                            # URL and date information
-                            display_url = row['url']
-                            if len(display_url) > 50:
-                                display_url = display_url[:50] + "..."
-                            st.markdown(f"**{display_url}**")
-                            st.markdown(f"📅 **{row['date']}**")
-                        
-                        with col3:
-                            # Content preview with better formatting
-                            if i < len(results):
-                                content = results[i].get('content')
-                                if content:
-                                    # Show first 100 characters of content
-                                    preview = content[:100] + "..." if len(content) > 100 else content
-                                    st.markdown(f"📄 **Content Preview:**")
-                                    st.markdown(f"*{preview}*")
-                                    
-                                    # Show content length indicator
-                                    content_length = len(content)
-                                    if content_length > 1000:
-                                        st.markdown("🟢 **Long content**")
-                                    elif content_length > 500:
-                                        st.markdown("🟡 **Medium content**")
+            if results_df is not None and len(results_df) > 0:
+                with st.form("translation_selection"):
+                    # Display results in a more organized way with better column layout
+                    for i, row in results_df.iterrows():
+                        # Create a container for each result with better spacing
+                        with st.container():
+                            # Use better column proportions: Select | URL/Info | Content Preview | Actions
+                            col1, col2, col3, col4 = st.columns([0.08, 0.35, 0.42, 0.15])
+                            
+                            with col1:
+                                # Pre-select based on bulk actions
+                                default_value = i in selected_indices
+                                if st.checkbox("", key=f"select_{i}", value=default_value, help=f"Select result {i+1}"):
+                                    selected_indices.append(i)
+                            
+                            with col2:
+                                # URL and date information
+                                display_url = row['url']
+                                if len(display_url) > 50:
+                                    display_url = display_url[:50] + "..."
+                                st.markdown(f"**{display_url}**")
+                                st.markdown(f"📅 **{row['date']}**")
+                            
+                            with col3:
+                                # Content preview with better formatting
+                                if display_results and i < len(display_results):
+                                    content = display_results[i].get('content')
+                                    if content:
+                                        # Show first 100 characters of content
+                                        preview = content[:100] + "..." if len(content) > 100 else content
+                                        st.markdown(f"📄 **Content Preview:**")
+                                        st.markdown(f"*{preview}*")
+                                        
+                                        # Show content length indicator
+                                        content_length = len(content)
+                                        if content_length > 1000:
+                                            st.markdown("🟢 **Long content**")
+                                        elif content_length > 500:
+                                            st.markdown("🟡 **Medium content**")
+                                        else:
+                                            st.markdown("🔴 **Short content**")
+                                        
+                                        # Show sentiment analysis if available
+                                        if 'sentiment' in display_results[i] and display_results[i]['sentiment']:
+                                            sentiment_data = display_results[i]['sentiment']
+                                            if 'error' not in sentiment_data:
+                                                compound_score = sentiment_data.get('compound', 0)
+                                                sentiment_label = "😊 Positive" if compound_score > 0.05 else "😞 Negative" if compound_score < -0.05 else "😐 Neutral"
+                                                st.markdown(f"🎯 **Sentiment:** {sentiment_label}")
+                                                st.markdown(f"📊 **Score:** {compound_score:.3f}")
+                                            else:
+                                                st.markdown("⚠️ **Sentiment:** Analysis failed")
+                                        else:
+                                            st.markdown("❓ **Sentiment:** Not analyzed")
                                     else:
-                                        st.markdown("🔴 **Short content**")
+                                        st.markdown("❌ **No content available**")
                                 else:
-                                    st.markdown("❌ **No content available**")
-                            else:
-                                st.markdown("❓ **Unknown**")
-                        
-                        with col4:
-                            # Action buttons
-                            st.markdown(f"[🔗 Visit]({row['url']})", unsafe_allow_html=True)
-                            if i < len(results) and results[i].get('content'):
-                                st.markdown("✅ **Ready to translate**")
-                            else:
-                                st.markdown("⚠️ **No content**")
-                        
-                        # Add separator between results
-                        st.markdown("---")
-                
-                # Translation options with better styling
-                st.markdown("---")
-                st.markdown("### 🌐 Translation & Summarization")
-                col1, col2, col3 = st.columns([2, 1, 1])
-                with col1:
-                    translate_selected = st.form_submit_button(
-                        "🚀 Translate & Summarize Selected", 
-                        type="primary",
-                        help="Translate Nepali content to English and generate summaries"
-                    )
-                with col2:
-                    st.markdown(f"**Selected:** {len(selected_indices)} items")
-                with col3:
-                    if selected_indices:
-                        st.markdown("✅ **Ready to process**")
-                    else:
-                        st.markdown("⚠️ **No items selected**")
+                                    st.markdown("❓ **Unknown**")
+                            
+                            with col4:
+                                # Action buttons
+                                st.markdown(f"[🔗 Visit]({row['url']})", unsafe_allow_html=True)
+                                if display_results and i < len(display_results) and display_results[i].get('content'):
+                                    st.markdown("✅ **Ready to translate**")
+                                else:
+                                    st.markdown("⚠️ **No content**")
+                            
+                            # Add separator between results
+                            st.markdown("---")
+                    
+                    # Translation options with better styling (must be inside the form)
+                    st.markdown("---")
+                    st.markdown("### 🌐 Translation & Summarization")
+                    col1, col2, col3 = st.columns([2, 1, 1])
+                    with col1:
+                        translate_selected = st.form_submit_button(
+                            "🚀 Translate & Summarize Selected", 
+                            type="primary",
+                            help="Translate content to English and generate summaries"
+                        )
+                    with col2:
+                        st.markdown(f"**Selected:** {len(selected_indices)} items")
+                    with col3:
+                        if selected_indices:
+                            st.markdown("✅ **Ready to process**")
+                        else:
+                            st.markdown("⚠️ **No items selected**")
+            else:
+                st.info("📋 No results available to display. Please crawl some sites first.")
             
             # Process selected results with AI translation and summarization
-            if translate_selected and selected_indices:
+            if translate_selected and selected_indices and results:
                 st.markdown("### 🤖 AI Processing")
                 st.markdown("**Translating and summarizing selected content...**")
                 processed_results = []
@@ -1129,7 +1568,13 @@ def main():
                 status_text = st.empty()
                 
                 for idx, i in enumerate(selected_indices):
-                    result = results[i].copy()
+                    # Get the actual result from the filtered results
+                    if display_results and i < len(display_results):
+                        result = display_results[i].copy()
+                    else:
+                        # Fallback to original results if index is out of range
+                        result = results[i].copy()
+                    
                     status_text.text(f'Processing {idx + 1}/{len(selected_indices)}: {result["url"][:50]}...')
                     
                     # Use stored content from crawl - NO RE-CRAWLING
@@ -1211,61 +1656,69 @@ def main():
             
             elif translate_selected and not selected_indices:
                 st.warning("⚠️ **Please select at least one item to translate and summarize.**")
+            elif translate_selected and not results:
+                st.warning("⚠️ **No results available to process. Please crawl some sites first.**")
+            else:
+                if results:
+                    st.info("📋 **Ready to translate and summarize!** Select items above and click the button.")
+                else:
+                    st.info("📋 **No results available.** Please crawl some sites first.")
             
             # Show debug table for all crawled pages in collapsible section
-            if debug_rows_all:
+            if debug_rows_all and results:
                 with st.expander("🔍 Debug: All Crawled Pages"):
                     debug_df = pd.DataFrame(debug_rows_all)
                     st.markdown(f"**Total pages crawled:** {len(debug_df)}")
                     st.dataframe(debug_df)
             
             # Session management
-            st.write("---")
-            st.write("### Session Management")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Save session
-                if st.button("💾 Save Session"):
-                    # Clean results for saving (remove content to reduce file size)
-                    clean_results = []
-                    for result in results:
-                        clean_result = result.copy()
-                        if 'content' in clean_result:
-                            del clean_result['content']  # Remove content to save space
-                        clean_results.append(clean_result)
-                    
-                    session_data = {
-                        'results': clean_results,
-                        'keyword': keyword,
-                        'date_from': str(filter_from) if filter_from else None,
-                        'date_to': str(filter_to) if filter_to else None,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    session_json = json.dumps(session_data, default=str)
-                    st.download_button(
-                        "Download Session File",
-                        data=session_json,
-                        file_name=f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                        mime="application/json"
-                    )
-            
-            with col2:
-                # Load session
-                uploaded_session = st.file_uploader("Load Previous Session", type=['json'])
-                if uploaded_session:
-                    try:
-                        session_data = json.load(uploaded_session)
-                        st.success(f"Session loaded from {session_data.get('timestamp', 'unknown time')}")
-                        st.write(f"Keyword: {session_data.get('keyword', 'N/A')}")
-                        st.write(f"Date range: {session_data.get('date_from', 'N/A')} to {session_data.get('date_to', 'N/A')}")
-                        st.write(f"Results: {len(session_data.get('results', []))} links")
-                    except Exception as e:
-                        st.error(f"Failed to load session: {e}")
+            if results:
+                st.write("---")
+                st.write("### Session Management")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Save session
+                    if st.button("💾 Save Session"):
+                        # Clean results for saving (remove content to reduce file size)
+                        clean_results = []
+                        for result in results:
+                            clean_result = result.copy()
+                            if 'content' in clean_result:
+                                del clean_result['content']  # Remove content to save space
+                            clean_results.append(clean_result)
+                        
+                        session_data = {
+                            'results': clean_results,
+                            'keyword': keyword,
+                            'date_from': str(filter_from) if filter_from else None,
+                            'date_to': str(filter_to) if filter_to else None,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        session_json = json.dumps(session_data, default=str)
+                        st.download_button(
+                            "Download Session File",
+                            data=session_json,
+                            file_name=f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json"
+                        )
+                
+                with col2:
+                    # Load session
+                    uploaded_session = st.file_uploader("Load Previous Session", type=['json'])
+                    if uploaded_session:
+                        try:
+                            session_data = json.load(uploaded_session)
+                            st.success(f"Session loaded from {session_data.get('timestamp', 'unknown time')}")
+                            st.write(f"Keyword: {session_data.get('keyword', 'N/A')}")
+                            st.write(f"Date range: {session_data.get('date_from', 'N/A')} to {session_data.get('date_to', 'N/A')}")
+                            st.write(f"Results: {len(session_data.get('results', []))} links")
+                        except Exception as e:
+                            st.error(f"Failed to load session: {e}")
         else:
             results_placeholder.write('No matches found.')
         # Show debug table for all crawled pages
-        if debug_rows_all:
+        if debug_rows_all and results:
             debug_df = pd.DataFrame(debug_rows_all)
             st.write('#### Debug: All Crawled Pages')
             st.dataframe(debug_df)

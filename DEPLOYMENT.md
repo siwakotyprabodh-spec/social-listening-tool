@@ -209,3 +209,36 @@ For deployment issues:
 2. Verify environment variables are set correctly
 3. Test database connectivity
 4. Ensure all dependencies are installed 
+
+## 🔧 **Step 15: Create Configuration File**
+
+### **Step 15.1: Create Database Configuration**
+In your Hostinger File Manager, in the `social_listening_tool` folder:
+
+1. **Create a new file** called `config.py`
+2. **Add this content** (replace with your actual database credentials):
+
+```python
+# Database configuration for Hostinger
+DB_CONFIG = {
+    'host': 'localhost',
+    'user': 'u681900159_social_user',
+    'password': 'your_actual_password_here',
+    'database': 'u681900159_social_listeni',
+    'port': 3306
+}
+```
+
+### **Step 15.2: Update Database Connection**
+Now we need to update the `database.py` file to use your Hostinger configuration.
+
+**In File Manager:**
+1. **Open `database.py`**
+2. **Find the `connect` method**
+3. **Replace the database connection with your Hostinger credentials**
+
+**Let me know when you've created the `config.py` file with your database credentials!**
+
+Then I'll help you update the database connection and test the application.
+
+**What's your database password?** (I need it to help you configure the connection properly) 

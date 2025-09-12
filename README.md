@@ -1,9 +1,17 @@
 # Social Listening Tool with Enhanced AI Translation
 
 ## Overview
-This tool crawls websites to find content containing specific keywords and translates Nepali content to English using advanced AI translation techniques.
+This tool crawls websites to find content containing specific keywords and translates content to English using advanced AI translation techniques.
 
 ## Recent Improvements
+
+### 🧠 Sentiment Analysis Integration
+- **Automatic Sentiment Detection**: Analyze sentiment of crawled news content automatically
+- **Multiple Analysis Methods**: Choose from VADER (fast), TextBlob (balanced), or Hybrid (most accurate)
+- **Real-time Sentiment Display**: See sentiment scores and labels for each result
+- **Sentiment Summary Dashboard**: View overall sentiment statistics and distribution charts
+- **Multi-language Support**: Works with content in various languages
+- **Configurable Settings**: Enable/disable sentiment analysis and choose your preferred method
 
 ### Selective Translation System
 - **Choose What to Translate**: Select specific links instead of translating everything
@@ -32,9 +40,9 @@ The translation system has been significantly improved with the following featur
 
 3. **Text Preprocessing**: 
    - Cleans HTML artifacts and special characters
-   - Normalizes Nepali numbers to English
-   - Fixes common Nepali text formatting issues
-   - Preserves Nepali characters during processing
+   - Normalizes numbers to English
+- Fixes common text formatting issues
+- Preserves special characters during processing
 
 4. **Post-processing**: 
    - Fixes punctuation and spacing issues
@@ -45,7 +53,7 @@ The translation system has been significantly improved with the following featur
 
 ## Installation
 
-### Basic Installation (Translation Only)
+### Basic Installation (Translation + Sentiment Analysis)
 1. Install required dependencies:
 ```bash
 pip install -r requirements.txt
@@ -55,6 +63,8 @@ pip install -r requirements.txt
 ```bash
 streamlit run social_listening_app.py
 ```
+
+**Note**: The sentiment analysis packages (textblob, vaderSentiment, plotly) are included in requirements.txt and will be installed automatically.
 
 ### Advanced Installation (With AI Summarization)
 For better summarization quality, install transformers:
@@ -68,10 +78,11 @@ pip install transformers torch
 
 1. **Upload Data**: Upload a CSV or Excel file containing URLs
 2. **Enter Keyword**: Specify the keyword to search for
-3. **Set Date Range**: Choose English or Nepali date range
+3. **Set Date Range**: Choose date range for filtering
 4. **Configure Settings**: Choose from the sidebar:
    - **Translation Quality**: Standard (Fast), High Quality (Slower), or Best Quality (Slowest)
    - **Summary Length**: Short (1 paragraph), Medium (2 paragraphs), or Long (3+ paragraphs)
+   - **Sentiment Analysis**: Enable/disable and choose method (VADER, TextBlob, or Hybrid)
 5. **Crawl Sites**: The tool will crawl sites and find matches
 6. **Select Links to Translate**: 
    - Review the crawled results
@@ -80,6 +91,33 @@ pip install transformers torch
    - See content length preview for each link
 7. **Translate Selected**: Click "Translate Selected Links" to process only chosen content
 8. **Save/Load Sessions**: Save your work and load previous sessions
+
+## Sentiment Analysis Features
+
+### Analysis Methods
+- **VADER**: Fast and effective for social media content, handles emojis and slang well
+- **TextBlob**: Balanced approach with subjectivity analysis, good for formal content
+- **Hybrid**: Combines both methods for highest accuracy and confidence scoring
+
+### Sentiment Display
+- **Individual Results**: Each crawled result shows sentiment score and label
+- **Summary Dashboard**: Overall statistics with positive/negative/neutral counts
+- **Visual Charts**: Pie charts showing sentiment distribution (requires plotly)
+- **Score Range**: -1.0 (very negative) to +1.0 (very positive)
+
+### Sentiment Filtering
+- **Category Filtering**: Filter by Positive, Negative, or Neutral sentiment
+- **Score Range Filtering**: Set minimum and maximum sentiment scores (-1.0 to +1.0)
+- **Quick Filter Buttons**: One-click filtering for common sentiment categories
+- **Combined Filtering**: Apply both category and score range filters simultaneously
+- **Real-time Updates**: See filtered results immediately in the interface
+
+### Best Practices
+- **For News Monitoring**: Use VADER method for fast analysis of large volumes
+- **For Detailed Analysis**: Use Hybrid method for highest accuracy
+- **For Social Media**: VADER handles informal language and emojis best
+- **For Reports**: TextBlob provides additional subjectivity insights
+- **For Filtering**: Start with category filters, then refine with score ranges
 
 ## Translation Quality Tips
 
@@ -91,7 +129,7 @@ pip install transformers torch
 ## Troubleshooting
 
 If translations are still poor quality:
-1. Check that the source text is actually in Nepali
+1. Check that the source text is in the expected language
 2. Try different quality modes
 3. Ensure the text is not too short (minimum 50 characters)
 4. Check the console output for translation service errors

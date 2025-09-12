@@ -28,7 +28,7 @@ def show_login_page():
     st.markdown("""
     <div style="text-align: center; margin-bottom: 3rem;">
         <h1 style="color: #20B2AA; font-size: 2.5rem; margin-bottom: 0.5rem;">🔍 Social Listening Tool</h1>
-        <p style="color: #666; font-size: 1.1rem;">Monitor and analyze Nepali social media content</p>
+        <p style="color: #666; font-size: 1.1rem;">Monitor and analyze social media content</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -100,7 +100,7 @@ def show_login_page():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; font-size: 0.9rem;">
-        <p>AI-powered translation and summarization for Nepali content</p>
+        <p>AI-powered translation and summarization for content</p>
     </div>
     """, unsafe_allow_html=True)
 
