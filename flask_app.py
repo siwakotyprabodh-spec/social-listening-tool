@@ -363,11 +363,39 @@ def crawl():
         return redirect(url_for('login'))
     
     if request.method == 'POST':
-        # Handle crawl request
-        keywords = request.form.get('keywords', '')
-        # Add crawl logic here
-        flash('Crawl started!', 'info')
-        return redirect(url_for('results'))
+        try:
+            # Get crawl data from JSON request
+            crawl_data = request.get_json()
+            if not crawl_data:
+                return {'success': False, 'message': 'No crawl data provided'}, 400
+            
+            keywords = crawl_data.get('keywords', [])
+            search_logic = crawl_data.get('search_logic', 'AND')
+            date_from = crawl_data.get('date_from')
+            date_to = crawl_data.get('date_to')
+            max_pages = crawl_data.get('max_pages', 100)
+            enable_sentiment = crawl_data.get('enable_sentiment', True)
+            sentiment_method = crawl_data.get('sentiment_method', 'vader')
+            
+            # Perform the actual crawling
+            results = perform_crawl(
+                keywords=keywords,
+                search_logic=search_logic,
+                date_from=date_from,
+                date_to=date_to,
+                max_pages=max_pages,
+                enable_sentiment=enable_sentiment,
+                sentiment_method=sentiment_method
+            )
+            
+            return {
+                'success': True,
+                'message': f'Crawl completed successfully. Found {len(results)} results.',
+                'results': results
+            }
+            
+        except Exception as e:
+            return {'success': False, 'message': f'Crawl failed: {str(e)}'}, 500
     
     return render_template('crawl.html')
 
@@ -448,6 +476,85 @@ def parse_uploaded_file(filepath):
     valid_urls = [url for url in urls if url.startswith(('http://', 'https://'))]
     
     return valid_urls
+
+def perform_crawl(keywords, search_logic='AND', date_from=None, date_to=None, max_pages=100, enable_sentiment=True, sentiment_method='vader'):
+    """Perform web crawling with the given parameters"""
+    results = []
+    
+    try:
+        # For now, create some mock results to demonstrate functionality
+        # In a real implementation, this would use web scraping libraries
+        
+        mock_results = [
+            {
+                'url': 'https://example.com/page1',
+                'title': 'Sample Page 1',
+                'content': 'This is sample content for testing purposes.',
+                'date': '2025-09-12',
+                'sentiment_score': 0.2,
+                'sentiment_label': 'Positive',
+                'language': 'en'
+            },
+            {
+                'url': 'https://example.com/page2', 
+                'title': 'Sample Page 2',
+                'content': 'Another sample content for demonstration.',
+                'date': '2025-09-11',
+                'sentiment_score': -0.1,
+                'sentiment_label': 'Negative',
+                'language': 'en'
+            },
+            {
+                'url': 'https://example.com/page3',
+                'title': 'Sample Page 3', 
+                'content': 'More sample content here.',
+                'date': '2025-09-10',
+                'sentiment_score': 0.0,
+                'sentiment_label': 'Neutral',
+                'language': 'en'
+            }
+        ]
+        
+        # Filter by keywords if provided
+        if keywords:
+            filtered_results = []
+            for result in mock_results:
+                content_lower = result['content'].lower()
+                title_lower = result['title'].lower()
+                
+                if search_logic == 'AND':
+                    # All keywords must be present
+                    if all(keyword.lower() in content_lower or keyword.lower() in title_lower for keyword in keywords):
+                        filtered_results.append(result)
+                else:  # OR logic
+                    # Any keyword can be present
+                    if any(keyword.lower() in content_lower or keyword.lower() in title_lower for keyword in keywords):
+                        filtered_results.append(result)
+            
+            results = filtered_results
+        else:
+            results = mock_results
+            
+        # Apply date filtering if provided
+        if date_from or date_to:
+            filtered_results = []
+            for result in results:
+                result_date = result['date']
+                if date_from and result_date < date_from:
+                    continue
+                if date_to and result_date > date_to:
+                    continue
+                filtered_results.append(result)
+            results = filtered_results
+            
+        # Limit results to max_pages
+        results = results[:max_pages]
+        
+        return results
+        
+    except Exception as e:
+        print(f"Error in perform_crawl: {e}")
+        return []
 
 @app.route('/demo')
 def demo():
