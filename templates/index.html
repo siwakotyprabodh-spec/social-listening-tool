@@ -1,0 +1,559 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Social Listening Tool{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <!-- Header -->
+        <div class="main-header text-center py-4 mb-4">
+            <h1 class="text-white mb-2">
+                <i class="fas fa-search"></i> Social Listening Tool
+            </h1>
+            <p class="text-white-50">
+                Monitor and analyze social media content with AI-powered translation and summarization
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-lg-3">
+        <!-- User Preferences -->
+        <div class="card preferences-card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-cog"></i> User Preferences
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Translation Quality</label>
+                    <select class="form-select" id="translation_quality">
+                        <option value="Standard (Fast)">Standard (Fast)</option>
+                        <option value="High Quality (Slower)">High Quality (Slower)</option>
+                        <option value="Best Quality (Slowest)">Best Quality (Slowest)</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Summary Length</label>
+                    <select class="form-select" id="summary_length">
+                        <option value="Short (1 paragraph)">Short (1 paragraph)</option>
+                        <option value="Medium (2 paragraphs)" selected>Medium (2 paragraphs)</option>
+                        <option value="Long (3+ paragraphs)">Long (3+ paragraphs)</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Max Crawl Pages</label>
+                    <input type="number" class="form-control" id="max_crawl_pages" value="100" min="10" max="500">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Crawl Timeout (seconds)</label>
+                    <input type="number" class="form-control" id="crawl_timeout" value="120" min="30" max="300">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Sentiment Method</label>
+                    <select class="form-select" id="sentiment_method">
+                        <option value="vader">VADER (Fast)</option>
+                        <option value="textblob">TextBlob (Balanced)</option>
+                        <option value="hybrid">Hybrid (Most Accurate)</option>
+                    </select>
+                </div>
+                
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="enable_sentiment" checked>
+                    <label class="form-check-label" for="enable_sentiment">
+                        Enable Sentiment Analysis
+                    </label>
+                </div>
+                
+                <button type="button" class="btn btn-primary w-100" onclick="savePreferences()">
+                    <i class="fas fa-save"></i> Save Preferences
+                </button>
+            </div>
+        </div>
+
+        <!-- Search Keywords -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-search"></i> Search Keywords
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">Add up to 5 keywords to search for:</p>
+                
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="keyword1" placeholder="Keyword 1">
+                </div>
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="keyword2" placeholder="Keyword 2">
+                </div>
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="keyword3" placeholder="Keyword 3">
+                </div>
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="keyword4" placeholder="Keyword 4">
+                </div>
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="keyword5" placeholder="Keyword 5">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Search Logic</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="search_logic" id="search_and" value="AND" checked>
+                        <label class="form-check-label" for="search_and">
+                            AND (All keywords must be present)
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="search_logic" id="search_or" value="OR">
+                        <label class="form-check-label" for="search_or">
+                            OR (Any keyword can be present)
+                        </label>
+                    </div>
+                </div>
+                
+                <button type="button" class="btn btn-outline-secondary w-100" onclick="clearKeywords()">
+                    <i class="fas fa-trash"></i> Clear All Keywords
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="col-lg-9">
+        <!-- File Upload -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-upload"></i> Upload Data
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Upload a CSV or Excel file containing URLs to analyze:</p>
+                
+                <div class="mb-3">
+                    <input type="file" class="form-control" id="fileInput" accept=".csv,.xlsx">
+                    <div class="form-text">Supported formats: CSV, Excel (.xlsx)</div>
+                </div>
+                
+                <div id="uploadStatus" class="mb-3" style="display: none;"></div>
+                
+                <button type="button" class="btn btn-success" onclick="uploadFile()">
+                    <i class="fas fa-upload"></i> Upload File
+                </button>
+            </div>
+        </div>
+
+        <!-- Date Range -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-calendar"></i> Date Range Filter
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <label class="form-label">From Date</label>
+                        <input type="date" class="form-control" id="date_from">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">To Date</label>
+                        <input type="date" class="form-control" id="date_to">
+                    </div>
+                </div>
+                <div class="form-text">Leave empty to search all dates</div>
+            </div>
+        </div>
+
+        <!-- Crawl Controls -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-rocket"></i> Start Analysis
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <button type="button" class="btn btn-primary btn-lg" onclick="startCrawl()">
+                            <i class="fas fa-rocket"></i> Start Crawl
+                        </button>
+                    </div>
+                    <div class="col-md-6">
+                        <div id="crawlInfo" class="text-muted">
+                            <small>Upload a file and set keywords to begin</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="crawlProgress" class="mt-3" style="display: none;">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="mt-2 text-center">
+                        <small id="crawlStatus">Preparing...</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Preview -->
+        <div id="resultsPreview" class="card" style="display: none;">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar"></i> Crawl Results
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="resultsContent"></div>
+                
+                <div class="mt-3">
+                    <button type="button" class="btn btn-success" onclick="startTranslation()">
+                        <i class="fas fa-language"></i> Translate Selected
+                    </button>
+                    <a href="{{ url_for('results') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-eye"></i> View Full Results
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Translation Modal -->
+<div class="modal fade" id="translationModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-language"></i> Translation Progress
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="progress mb-3">
+                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div id="translationStatus" class="text-center">Preparing translation...</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Global variables
+let uploadedUrls = [];
+let crawlResults = [];
+
+// Load user preferences on page load
+$(document).ready(function() {
+    loadUserPreferences();
+});
+
+// Load user preferences
+function loadUserPreferences() {
+    $.get('/preferences')
+        .done(function(data) {
+            if (data.translation_quality) {
+                $('#translation_quality').val(data.translation_quality);
+            }
+            if (data.summary_length) {
+                $('#summary_length').val(data.summary_length);
+            }
+            if (data.max_crawl_pages) {
+                $('#max_crawl_pages').val(data.max_crawl_pages);
+            }
+            if (data.crawl_timeout) {
+                $('#crawl_timeout').val(data.crawl_timeout);
+            }
+            if (data.sentiment_method) {
+                $('#sentiment_method').val(data.sentiment_method);
+            }
+            if (data.enable_sentiment !== undefined) {
+                $('#enable_sentiment').prop('checked', data.enable_sentiment);
+            }
+        })
+        .fail(function() {
+            console.log('Failed to load preferences');
+        });
+}
+
+// Save user preferences
+function savePreferences() {
+    const preferences = {
+        translation_quality: $('#translation_quality').val(),
+        summary_length: $('#summary_length').val(),
+        max_crawl_pages: parseInt($('#max_crawl_pages').val()),
+        crawl_timeout: parseInt($('#crawl_timeout').val()),
+        sentiment_method: $('#sentiment_method').val(),
+        enable_sentiment: $('#enable_sentiment').is(':checked')
+    };
+    
+    $.post('/preferences', JSON.stringify(preferences), 'json')
+        .done(function() {
+            showAlert('Preferences saved successfully!', 'success');
+        })
+        .fail(function() {
+            showAlert('Failed to save preferences', 'danger');
+        });
+}
+
+// Upload file
+function uploadFile() {
+    const fileInput = document.getElementById('fileInput');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showAlert('Please select a file to upload', 'warning');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    $('#uploadStatus').html('<div class="alert alert-info">Uploading file...</div>').show();
+    
+    $.ajax({
+        url: '/upload',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function(response) {
+            if (response.success) {
+                uploadedUrls = response.urls;
+                $('#uploadStatus').html(`
+                    <div class="alert alert-success">
+                        <i class="fas fa-check"></i> File uploaded successfully! 
+                        Found ${response.count} URLs in ${response.filename}
+                    </div>
+                `);
+                updateCrawlInfo();
+            } else {
+                showAlert('Upload failed: ' + response.error, 'danger');
+            }
+        },
+        error: function(xhr) {
+            const response = JSON.parse(xhr.responseText);
+            showAlert('Upload failed: ' + response.error, 'danger');
+        }
+    });
+}
+
+// Update crawl info
+function updateCrawlInfo() {
+    const keywords = getActiveKeywords();
+    const keywordText = keywords.length > 0 ? keywords.join(', ') : 'No keywords set';
+    
+    $('#crawlInfo').html(`
+        <small>
+            <strong>URLs:</strong> ${uploadedUrls.length}<br>
+            <strong>Keywords:</strong> ${keywordText}
+        </small>
+    `);
+}
+
+// Get active keywords
+function getActiveKeywords() {
+    const keywords = [];
+    for (let i = 1; i <= 5; i++) {
+        const keyword = $(`#keyword${i}`).val().trim();
+        if (keyword) {
+            keywords.push(keyword);
+        }
+    }
+    return keywords;
+}
+
+// Clear keywords
+function clearKeywords() {
+    for (let i = 1; i <= 5; i++) {
+        $(`#keyword${i}`).val('');
+    }
+    updateCrawlInfo();
+}
+
+// Start crawling
+function startCrawl() {
+    const keywords = getActiveKeywords();
+    if (keywords.length === 0) {
+        showAlert('Please enter at least one keyword', 'warning');
+        return;
+    }
+    
+    if (uploadedUrls.length === 0) {
+        showAlert('Please upload a file first', 'warning');
+        return;
+    }
+    
+    const crawlData = {
+        keywords: keywords,
+        search_logic: $('input[name="search_logic"]:checked').val(),
+        date_from: $('#date_from').val() || null,
+        date_to: $('#date_to').val() || null,
+        max_pages: parseInt($('#max_crawl_pages').val()),
+        enable_sentiment: $('#enable_sentiment').is(':checked'),
+        sentiment_method: $('#sentiment_method').val()
+    };
+    
+    $('#crawlProgress').show();
+    $('#crawlStatus').text('Starting crawl...');
+    
+    $.post('/crawl', JSON.stringify(crawlData), 'json')
+        .done(function(response) {
+            if (response.success) {
+                crawlResults = response.results;
+                showCrawlResults(response.results);
+                $('#crawlProgress').hide();
+                showAlert(`Crawl completed! Found ${response.count} results`, 'success');
+            } else {
+                showAlert('Crawl failed: ' + response.error, 'danger');
+                $('#crawlProgress').hide();
+            }
+        })
+        .fail(function(xhr) {
+            const response = JSON.parse(xhr.responseText);
+            showAlert('Crawl failed: ' + response.error, 'danger');
+            $('#crawlProgress').hide();
+        });
+}
+
+// Show crawl results
+function showCrawlResults(results) {
+    let html = `<div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="selectAll" onchange="toggleAllSelection()"></th>
+                    <th>URL</th>
+                    <th>Date</th>
+                    <th>Sentiment</th>
+                    <th>Keywords Found</th>
+                </tr>
+            </thead>
+            <tbody>`;
+    
+    results.forEach((result, index) => {
+        const sentimentClass = getSentimentClass(result.sentiment);
+        const sentimentLabel = getSentimentLabel(result.sentiment);
+        
+        html += `
+            <tr>
+                <td><input type="checkbox" class="result-checkbox" value="${index}"></td>
+                <td><a href="${result.url}" target="_blank" class="text-decoration-none">${result.url}</a></td>
+                <td>${result.date}</td>
+                <td><span class="badge ${sentimentClass}">${sentimentLabel}</span></td>
+                <td>${result.keywords_found ? result.keywords_found.join(', ') : 'N/A'}</td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table></div>';
+    
+    $('#resultsContent').html(html);
+    $('#resultsPreview').show();
+}
+
+// Get sentiment class for styling
+function getSentimentClass(sentiment) {
+    if (!sentiment || sentiment.compound === undefined) return 'bg-secondary';
+    
+    const score = sentiment.compound;
+    if (score > 0.1) return 'bg-success';
+    if (score < -0.1) return 'bg-danger';
+    return 'bg-warning';
+}
+
+// Get sentiment label
+function getSentimentLabel(sentiment) {
+    if (!sentiment || sentiment.compound === undefined) return 'Unknown';
+    
+    const score = sentiment.compound;
+    if (score > 0.1) return 'Positive';
+    if (score < -0.1) return 'Negative';
+    return 'Neutral';
+}
+
+// Toggle all selection
+function toggleAllSelection() {
+    const selectAll = $('#selectAll').is(':checked');
+    $('.result-checkbox').prop('checked', selectAll);
+}
+
+// Start translation
+function startTranslation() {
+    const selectedIndices = [];
+    $('.result-checkbox:checked').each(function() {
+        selectedIndices.push(parseInt($(this).val()));
+    });
+    
+    if (selectedIndices.length === 0) {
+        showAlert('Please select at least one result to translate', 'warning');
+        return;
+    }
+    
+    const translationData = {
+        selected_indices: selectedIndices,
+        translation_quality: $('#translation_quality').val(),
+        summary_length: $('#summary_length').val()
+    };
+    
+    $('#translationModal').modal('show');
+    $('#translationStatus').text('Starting translation...');
+    
+    $.post('/translate', JSON.stringify(translationData), 'json')
+        .done(function(response) {
+            if (response.success) {
+                $('#translationStatus').text('Translation completed!');
+                setTimeout(function() {
+                    $('#translationModal').modal('hide');
+                    showAlert('Translation completed!', 'success');
+                    // Redirect to results page
+                    window.location.href = '{{ url_for("results") }}';
+                }, 1000);
+            } else {
+                $('#translationStatus').text('Translation failed: ' + response.error);
+            }
+        })
+        .fail(function(xhr) {
+            const response = JSON.parse(xhr.responseText);
+            $('#translationStatus').text('Translation failed: ' + response.error);
+        });
+}
+
+// Show alert
+function showAlert(message, type) {
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    // Remove existing alerts
+    $('.alert').remove();
+    
+    // Add new alert
+    $('.container').prepend(alertHtml);
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(function() {
+        $('.alert').fadeOut();
+    }, 5000);
+}
+
+// Update crawl info when keywords change
+$('#keyword1, #keyword2, #keyword3, #keyword4, #keyword5').on('input', updateCrawlInfo);
+</script>
+{% endblock %}

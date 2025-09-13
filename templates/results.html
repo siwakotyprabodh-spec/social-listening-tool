@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+
+{% block title %}Results - Social Listening Tool{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2><i class="fas fa-chart-bar"></i> Analysis Results</h2>
+                <p class="text-muted">View and analyze your social listening results</p>
+            </div>
+            <div>
+                <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results Tabs -->
+<ul class="nav nav-tabs" id="resultsTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="crawl-tab" data-bs-toggle="tab" data-bs-target="#crawl-results" type="button" role="tab">
+            <i class="fas fa-spider"></i> Crawl Results
+            <span class="badge bg-primary ms-2">{{ crawl_results|length }}</span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="translated-tab" data-bs-toggle="tab" data-bs-target="#translated-results" type="button" role="tab">
+            <i class="fas fa-language"></i> Translated Results
+            <span class="badge bg-success ms-2">{{ translated_results|length }}</span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="sentiment-tab" data-bs-toggle="tab" data-bs-target="#sentiment-analysis" type="button" role="tab">
+            <i class="fas fa-brain"></i> Sentiment Analysis
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="resultsTabsContent">
+    <!-- Crawl Results Tab -->
+    <div class="tab-pane fade show active" id="crawl-results" role="tabpanel">
+        <div class="card mt-3">
+            <div class="card-body">
+                {% if crawl_results %}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>URL</th>
+                                    <th>Date</th>
+                                    <th>Sentiment</th>
+                                    <th>Keywords Found</th>
+                                    <th>Content Preview</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for result in crawl_results %}
+                                <tr>
+                                    <td>
+                                        <a href="{{ result.url }}" target="_blank" class="text-decoration-none">
+                                            {{ result.url[:50] }}{% if result.url|length > 50 %}...{% endif %}
+                                        </a>
+                                    </td>
+                                    <td>{{ result.date }}</td>
+                                    <td>
+                                        {% set sentiment_score = result.sentiment.compound if result.sentiment else 0 %}
+                                        {% if sentiment_score > 0.1 %}
+                                            <span class="badge bg-success">Positive</span>
+                                        {% elif sentiment_score < -0.1 %}
+                                            <span class="badge bg-danger">Negative</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">Neutral</span>
+                                        {% endif %}
+                                        <small class="text-muted">({{ "%.2f"|format(sentiment_score) }})</small>
+                                    </td>
+                                    <td>
+                                        {% if result.keywords_found %}
+                                            {% for keyword in result.keywords_found %}
+                                                <span class="badge bg-info me-1">{{ keyword }}</span>
+                                            {% endfor %}
+                                        {% else %}
+                                            <span class="text-muted">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="content-preview" style="max-width: 300px;">
+                                            {{ result.content[:100] }}{% if result.content|length > 100 %}...{% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="showContent('{{ loop.index0 }}')">
+                                            <i class="fas fa-eye"></i> View
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No crawl results available</h5>
+                        <p class="text-muted">Start a crawl from the dashboard to see results here.</p>
+                        <a href="{{ url_for('index') }}" class="btn btn-primary">
+                            <i class="fas fa-rocket"></i> Start Crawl
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Translated Results Tab -->
+    <div class="tab-pane fade" id="translated-results" role="tabpanel">
+        <div class="card mt-3">
+            <div class="card-body">
+                {% if translated_results %}
+                    {% for result in translated_results %}
+                    <div class="result-item mb-4 p-3 border rounded">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <h6 class="mb-2">
+                                    <a href="{{ result.url }}" target="_blank" class="text-decoration-none">
+                                        {{ result.url }}
+                                    </a>
+                                </h6>
+                                <p class="text-muted small mb-3">
+                                    <i class="fas fa-calendar"></i> {{ result.date }}
+                                    {% if result.sentiment %}
+                                        | <i class="fas fa-brain"></i> 
+                                        {% set sentiment_score = result.sentiment.compound %}
+                                        {% if sentiment_score > 0.1 %}
+                                            <span class="text-success">Positive</span>
+                                        {% elif sentiment_score < -0.1 %}
+                                            <span class="text-danger">Negative</span>
+                                        {% else %}
+                                            <span class="text-warning">Neutral</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </p>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                {% if result.keywords_found %}
+                                    {% for keyword in result.keywords_found %}
+                                        <span class="badge bg-info me-1">{{ keyword }}</span>
+                                    {% endfor %}
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        {% if result.summary %}
+                        <div class="summary-section mb-3">
+                            <h6><i class="fas fa-file-alt"></i> Summary</h6>
+                            <div class="summary-content bg-light p-3 rounded">
+                                {{ result.summary|replace('\n\n', '</p><p>')|replace('\n', '<br>')|safe }}
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        {% if result.translated_content %}
+                        <div class="translation-section">
+                            <h6><i class="fas fa-language"></i> Translated Content</h6>
+                            <div class="translation-content bg-light p-3 rounded" style="max-height: 200px; overflow-y: auto;">
+                                {{ result.translated_content|replace('\n\n', '</p><p>')|replace('\n', '<br>')|safe }}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-language fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No translated results available</h5>
+                        <p class="text-muted">Select and translate content from the crawl results to see translations here.</p>
+                        <a href="{{ url_for('index') }}" class="btn btn-success">
+                            <i class="fas fa-language"></i> Translate Content
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Sentiment Analysis Tab -->
+    <div class="tab-pane fade" id="sentiment-analysis" role="tabpanel">
+        <div class="card mt-3">
+            <div class="card-body">
+                {% if crawl_results %}
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h5 class="text-success">{{ crawl_results|selectattr('sentiment')|selectattr('sentiment.compound', '>', 0.1)|list|length }}</h5>
+                                    <p class="text-muted mb-0">Positive</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h5 class="text-warning">{{ crawl_results|selectattr('sentiment')|rejectattr('sentiment.compound', '>', 0.1)|rejectattr('sentiment.compound', '<', -0.1)|list|length }}</h5>
+                                    <p class="text-muted mb-0">Neutral</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h5 class="text-danger">{{ crawl_results|selectattr('sentiment')|selectattr('sentiment.compound', '<', -0.1)|list|length }}</h5>
+                                    <p class="text-muted mb-0">Negative</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h5 class="text-info">{{ crawl_results|length }}</h5>
+                                    <p class="text-muted mb-0">Total</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sentiment Distribution Chart -->
+                    <div class="mb-4">
+                        <h5>Sentiment Score Distribution</h5>
+                        <canvas id="sentimentChart" width="400" height="200"></canvas>
+                    </div>
+
+                    <!-- Detailed Sentiment Results -->
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>URL</th>
+                                    <th>Sentiment Score</th>
+                                    <th>Label</th>
+                                    <th>Keywords</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for result in crawl_results %}
+                                {% if result.sentiment %}
+                                <tr>
+                                    <td>
+                                        <a href="{{ result.url }}" target="_blank" class="text-decoration-none">
+                                            {{ result.url[:40] }}...
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <span class="badge {% if result.sentiment.compound > 0.1 %}bg-success{% elif result.sentiment.compound < -0.1 %}bg-danger{% else %}bg-warning{% endif %}">
+                                            {{ "%.3f"|format(result.sentiment.compound) }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if result.sentiment.compound > 0.1 %}
+                                            Positive
+                                        {% elif result.sentiment.compound < -0.1 %}
+                                            Negative
+                                        {% else %}
+                                            Neutral
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if result.keywords_found %}
+                                            {{ result.keywords_found|join(', ') }}
+                                        {% else %}
+                                            <span class="text-muted">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-brain fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No sentiment analysis available</h5>
+                        <p class="text-muted">Run a crawl with sentiment analysis enabled to see sentiment insights here.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Content Modal -->
+<div class="modal fade" id="contentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-eye"></i> Content Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modalContent"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Show content in modal
+function showContent(index) {
+    const results = {{ crawl_results|tojson }};
+    const result = results[index];
+    
+    let content = `
+        <div class="mb-3">
+            <h6>URL</h6>
+            <a href="${result.url}" target="_blank" class="text-decoration-none">${result.url}</a>
+        </div>
+        
+        <div class="mb-3">
+            <h6>Date</h6>
+            <p class="mb-0">${result.date}</p>
+        </div>
+        
+        <div class="mb-3">
+            <h6>Sentiment</h6>
+            <p class="mb-0">
+                <span class="badge ${getSentimentClass(result.sentiment)}">${getSentimentLabel(result.sentiment)}</span>
+                <small class="text-muted">(${result.sentiment ? result.sentiment.compound.toFixed(3) : 'N/A'})</small>
+            </p>
+        </div>
+        
+        <div class="mb-3">
+            <h6>Keywords Found</h6>
+            <p class="mb-0">
+                ${result.keywords_found ? result.keywords_found.join(', ') : 'None'}
+            </p>
+        </div>
+        
+        <div class="mb-3">
+            <h6>Content</h6>
+            <div class="bg-light p-3 rounded" style="max-height: 300px; overflow-y: auto;">
+                ${result.content.replace(/\n/g, '<br>')}
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('modalContent').innerHTML = content;
+    new bootstrap.Modal(document.getElementById('contentModal')).show();
+}
+
+// Get sentiment class
+function getSentimentClass(sentiment) {
+    if (!sentiment || sentiment.compound === undefined) return 'bg-secondary';
+    
+    const score = sentiment.compound;
+    if (score > 0.1) return 'bg-success';
+    if (score < -0.1) return 'bg-danger';
+    return 'bg-warning';
+}
+
+// Get sentiment label
+function getSentimentLabel(sentiment) {
+    if (!sentiment || sentiment.compound === undefined) return 'Unknown';
+    
+    const score = sentiment.compound;
+    if (score > 0.1) return 'Positive';
+    if (score < -0.1) return 'Negative';
+    return 'Neutral';
+}
+
+// Create sentiment chart
+document.addEventListener('DOMContentLoaded', function() {
+    const results = {{ crawl_results|tojson }};
+    
+    if (results.length > 0) {
+        // Prepare data for chart
+        const sentimentScores = results
+            .filter(r => r.sentiment && r.sentiment.compound !== undefined)
+            .map(r => r.sentiment.compound);
+        
+        if (sentimentScores.length > 0) {
+            const ctx = document.getElementById('sentimentChart').getContext('2d');
+            
+            // Create histogram data
+            const bins = [-1, -0.5, -0.1, -0.05, 0.05, 0.1, 0.5, 1];
+            const binLabels = ['Very Negative', 'Negative', 'Slightly Negative', 'Neutral', 'Slightly Positive', 'Positive', 'Very Positive'];
+            const binCounts = [];
+            
+            for (let i = 0; i < bins.length - 1; i++) {
+                const count = sentimentScores.filter(score => score >= bins[i] && score < bins[i + 1]).length;
+                binCounts.push(count);
+            }
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: binLabels,
+                    datasets: [{
+                        label: 'Number of Results',
+                        data: binCounts,
+                        backgroundColor: [
+                            '#dc3545', // Very Negative - Red
+                            '#fd7e14', // Negative - Orange
+                            '#ffc107', // Slightly Negative - Yellow
+                            '#6c757d', // Neutral - Gray
+                            '#20c997', // Slightly Positive - Teal
+                            '#198754', // Positive - Green
+                            '#0d6efd'  // Very Positive - Blue
+                        ],
+                        borderColor: [
+                            '#dc3545',
+                            '#fd7e14',
+                            '#ffc107',
+                            '#6c757d',
+                            '#20c997',
+                            '#198754',
+                            '#0d6efd'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+    }
+});
+</script>
+{% endblock %}
