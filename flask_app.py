@@ -17,7 +17,7 @@ import concurrent.futures
 import json
 import os
 from werkzeug.utils import secure_filename
-from werkzeug.security import check_password_hash, generate_password_hash
+# Password hashing is handled by DatabaseManager
 from functools import wraps
 import traceback
 
@@ -278,10 +278,10 @@ def login():
         password = request.form['password']
         
         if db:
-            user = db.get_user_by_username(username)
-            if user and check_password_hash(user['password'], password):
-                session['user_id'] = user['id']
-                session['username'] = user['username']
+            result = db.check_login(username, password)
+            if result['success']:
+                session['user_id'] = result['user_id']
+                session['username'] = result['username']
                 flash('Login successful!', 'success')
                 return redirect(url_for('index'))
             else:
@@ -304,13 +304,12 @@ def register():
             return render_template('register.html')
         
         # Check if user already exists
-        if db.get_user_by_username(username):
+        if db.user_exists(username):
             flash('Username already exists', 'error')
             return render_template('register.html')
         
         # Create new user
-        password_hash = generate_password_hash(password)
-        if db.create_user(username, password_hash, email):
+        if db.create_user(username, password, email):
             flash('Registration successful! Please login.', 'success')
             return redirect(url_for('login'))
         else:
