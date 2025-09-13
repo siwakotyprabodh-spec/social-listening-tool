@@ -45,23 +45,26 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 # Ensure upload directory exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Initialize database
-try:
-    from config import DB_CONFIG
-    # Set environment variables for DatabaseManager
-    os.environ['MYSQL_HOST'] = DB_CONFIG['host']
-    os.environ['MYSQL_USER'] = DB_CONFIG['user']
-    os.environ['MYSQL_PASSWORD'] = DB_CONFIG['password']
-    os.environ['MYSQL_DATABASE'] = DB_CONFIG['database']
-    os.environ['MYSQL_PORT'] = str(DB_CONFIG['port'])
-    
-    db = DatabaseManager()
-except Exception as e:
-    print(f"Warning: Database not available: {e}")
-    db = None
+# Initialize database - temporarily disabled to debug
+db = None
+sentiment_analyzer = None
 
-# Initialize sentiment analyzer
-sentiment_analyzer = SentimentAnalyzer() if SENTIMENT_AVAILABLE else None
+# try:
+#     from config import DB_CONFIG
+#     # Set environment variables for DatabaseManager
+#     os.environ['MYSQL_HOST'] = DB_CONFIG['host']
+#     os.environ['MYSQL_USER'] = DB_CONFIG['user']
+#     os.environ['MYSQL_PASSWORD'] = DB_CONFIG['password']
+#     os.environ['MYSQL_DATABASE'] = DB_CONFIG['database']
+#     os.environ['MYSQL_PORT'] = str(DB_CONFIG['port'])
+#     
+#     db = DatabaseManager()
+# except Exception as e:
+#     print(f"Warning: Database not available: {e}")
+#     db = None
+
+# Initialize sentiment analyzer - temporarily disabled to debug
+# sentiment_analyzer = SentimentAnalyzer() if SENTIMENT_AVAILABLE else None
 
 # Global variables for AI models
 translators = []
