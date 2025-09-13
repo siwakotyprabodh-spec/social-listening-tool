@@ -550,10 +550,24 @@ def perform_crawl(keywords, search_logic='AND', date_from=None, date_to=None, ma
         # Limit results to max_pages
         results = results[:max_pages]
         
-        return results
+        # Ensure all values are JSON serializable
+        json_safe_results = []
+        for result in results:
+            safe_result = {}
+            for key, value in result.items():
+                # Convert any non-serializable values to strings
+                if isinstance(value, (str, int, float, bool, type(None))):
+                    safe_result[key] = value
+                else:
+                    safe_result[key] = str(value)
+            json_safe_results.append(safe_result)
+        
+        return json_safe_results
         
     except Exception as e:
         print(f"Error in perform_crawl: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 @app.route('/demo')
