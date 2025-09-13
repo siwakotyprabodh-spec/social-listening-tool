@@ -261,7 +261,73 @@ def summarize_text(text, length='Medium'):
 # Routes
 @app.route('/')
 def index():
-    """Main dashboard - simplified for demo"""
+    """Main dashboard - check if user is logged in"""
+    # Check if user is logged in
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    # User is logged in, show full dashboard
+    user_prefs = db.get_user_preferences(session['user_id']) if db else None
+    return render_template('index.html', user_prefs=user_prefs)
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page"""
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        
+        if db:
+            user = db.get_user_by_username(username)
+            if user and check_password_hash(user['password'], password):
+                session['user_id'] = user['id']
+                session['username'] = user['username']
+                flash('Login successful!', 'success')
+                return redirect(url_for('index'))
+            else:
+                flash('Invalid username or password', 'error')
+        else:
+            flash('Database not available', 'error')
+    
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    """Registration page"""
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        email = request.form.get('email', '')
+        
+        if not db:
+            flash('Database not available', 'error')
+            return render_template('register.html')
+        
+        # Check if user already exists
+        if db.get_user_by_username(username):
+            flash('Username already exists', 'error')
+            return render_template('register.html')
+        
+        # Create new user
+        password_hash = generate_password_hash(password)
+        if db.create_user(username, password_hash, email):
+            flash('Registration successful! Please login.', 'success')
+            return redirect(url_for('login'))
+        else:
+            flash('Registration failed', 'error')
+    
+    return render_template('register.html')
+
+@app.route('/logout')
+def logout():
+    """Logout user"""
+    session.clear()
+    flash('You have been logged out', 'info')
+    return redirect(url_for('login'))
+
+@app.route('/demo')
+def demo():
+    """Demo page - simplified for demo"""
     # For demo purposes, show a simple interface
     return render_template_string("""
 <!DOCTYPE html>
