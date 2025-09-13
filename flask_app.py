@@ -371,6 +371,84 @@ def crawl():
     
     return render_template('crawl.html')
 
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    """Handle file upload"""
+    if 'user_id' not in session:
+        return {'success': False, 'message': 'Not logged in'}, 401
+    
+    if 'file' not in request.files:
+        return {'success': False, 'message': 'No file selected'}, 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return {'success': False, 'message': 'No file selected'}, 400
+    
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        # Add timestamp to avoid conflicts
+        import time
+        timestamp = str(int(time.time()))
+        filename = f"{timestamp}_{filename}"
+        
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        # Parse the uploaded file to extract URLs
+        try:
+            urls = parse_uploaded_file(filepath)
+            return {
+                'success': True, 
+                'message': f'File uploaded successfully: {file.filename}',
+                'urls': urls,
+                'filename': filename
+            }
+        except Exception as e:
+            return {'success': False, 'message': f'Error parsing file: {str(e)}'}, 500
+    else:
+        return {'success': False, 'message': 'Invalid file type. Please upload CSV or Excel files only.'}, 400
+
+def allowed_file(filename):
+    """Check if file extension is allowed"""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def parse_uploaded_file(filepath):
+    """Parse uploaded CSV or Excel file to extract URLs"""
+    import pandas as pd
+    
+    # Determine file type
+    if filepath.endswith('.csv'):
+        df = pd.read_csv(filepath)
+    elif filepath.endswith('.xlsx'):
+        df = pd.read_excel(filepath)
+    else:
+        raise ValueError("Unsupported file format")
+    
+    # Look for URL columns (common column names)
+    url_columns = ['url', 'URL', 'link', 'Link', 'website', 'Website', 'site', 'Site']
+    urls = []
+    
+    for col in url_columns:
+        if col in df.columns:
+            urls.extend(df[col].dropna().astype(str).tolist())
+            break
+    
+    # If no URL column found, check all columns for URLs
+    if not urls:
+        for col in df.columns:
+            # Check if column contains URLs (basic check)
+            sample_values = df[col].dropna().astype(str).head(10).tolist()
+            if any('http' in str(val) for val in sample_values):
+                urls.extend(df[col].dropna().astype(str).tolist())
+                break
+    
+    # Remove duplicates and filter valid URLs
+    urls = list(set(urls))
+    valid_urls = [url for url in urls if url.startswith(('http://', 'https://'))]
+    
+    return valid_urls
+
 @app.route('/demo')
 def demo():
     """Demo endpoint showing all features"""
