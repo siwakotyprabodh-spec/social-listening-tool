@@ -347,6 +347,30 @@ def health():
         }
     })
 
+@app.route('/results')
+def results():
+    """Results page - show crawl results"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    # For now, show a simple results page
+    return render_template('results.html')
+
+@app.route('/crawl', methods=['GET', 'POST'])
+def crawl():
+    """Crawl page - start crawling"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        # Handle crawl request
+        keywords = request.form.get('keywords', '')
+        # Add crawl logic here
+        flash('Crawl started!', 'info')
+        return redirect(url_for('results'))
+    
+    return render_template('crawl.html')
+
 @app.route('/demo')
 def demo():
     """Demo endpoint showing all features"""
