@@ -47,6 +47,14 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Initialize database
 try:
+    from config import DB_CONFIG
+    # Set environment variables for DatabaseManager
+    os.environ['MYSQL_HOST'] = DB_CONFIG['host']
+    os.environ['MYSQL_USER'] = DB_CONFIG['user']
+    os.environ['MYSQL_PASSWORD'] = DB_CONFIG['password']
+    os.environ['MYSQL_DATABASE'] = DB_CONFIG['database']
+    os.environ['MYSQL_PORT'] = str(DB_CONFIG['port'])
+    
     db = DatabaseManager()
 except Exception as e:
     print(f"Warning: Database not available: {e}")
